@@ -133,7 +133,7 @@ us <- us %>% filter(cases > 0)
 summary(us)
 ```
 
-The UID data, which represents population data, is added to the global data set by using Combined_Key. This merges province/state and country names. This is to have a similar geographic format across data sets. After the join, the unnecessary columns, such as identiers, are removed because they are not used in the scope of this analysis. 
+The UID data, which represents population data, is added to the global data set by using Combined_Key. This merges province/state and country names. This is to have a similar geographic format across data sets. After the join, the unnecessary columns, such as identifiers, are removed because they are not used in the scope of this analysis. 
 ```{r Population Data}
 global <- global %>%
   unite("Combined_Key",
