@@ -1,0 +1,318 @@
+---
+title: "COVID-19 Data"
+author: "Michaela Ernst"
+date: "2026-03-19"
+output:
+  pdf_document: default
+  html_document: default
+---
+# Overview
+
+This report analyzes the COVID-19 data from John Hopkins data set on how different countries were impacted by the pandemic. The data set tracks COVID-19 daily totals from 01-22-20 to 03-09-2023. After analyzing how countries around the world were impacted, the report focuses in on the United States of America. The US's COVID-19 cases were investigated to uncover why certain states and territories had higher cases than others. Within this report, there is a data input and cleaning section, visualizations, and a statistical model showing the correlation between US states and territories and their COVID-19 cases. At the end of the report, possible biases of this analysis are discussed. 
+
+## Packages Used
+
+```{r Packages}
+#install.packages("tidyverse")
+#install.packages("lubridate")
+#install.packages("tinytex")
+```
+
+## Libraries Used
+
+```{r Libraries}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Inputting the Data
+
+## Reading in the Dataset
+
+The data for this report comes from five different files all found in the Johns Hopkins COVID-19 data set. The first four files contain global and US time-series data on COVID-19 cases and deaths. These files are read into R below assigned as
+global_cases, global_deaths, us_cases, and us_death. In addition, UID is read in with key population information that will be used later on in this report. 
+```{r store filepaths}
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+file_names <- c("time_series_covid19_confirmed_global.csv", "time_series_covid19_deaths_global.csv",  "time_series_covid19_confirmed_US.csv",   "time_series_covid19_deaths_US.csv")
+
+urls <- str_c(url_in,file_names)
+# UID has the population for the different countries
+uid <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv") %>%
+  select(-c(Lat, Long_, Combined_Key, code3, iso2, iso3, Admin2 ))
+urls
+```
+
+```{r import data}
+global_cases <- read_csv(urls[1])
+global_deaths <- read_csv(urls[2])
+us_cases <-read_csv(urls[3])
+us_deaths <- read_csv(urls[4])
+```
+
+# Cleaning the Data
+
+This portion of the report goes over how the data was cleaned after being inputted.
+
+### The Global Data
+First, the global cases and deaths were cleaned. The data sets are transformed so each line represents a date. This transformation was done to help with the time-series analysis in the report. Certain columns, latitude and longitude, were removed that will not be used in this analysis. 
+```{r Cleaning Data - global_cases}
+
+global_cases <- global_cases %>%
+  pivot_longer(cols = -c('Province/State',
+                         'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "cases") %>%
+  select(-c(Lat,Long))
+```
+
+```{r Cleaning Data - global_deaths}
+
+global_deaths <- global_deaths %>%
+  pivot_longer(cols = -c('Province/State',
+                         'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "deaths") %>%
+  select(-c(Lat,Long))
+```
+
+In the following code chunk, the two global data sets from above were combined into one. This is done using a full join. The location columns are renamed and the zeros cases are filtered out. These are filtered out because this report only focuses on dates when COVID-19 cases occurred. Additionally, the date type is changed to month-day-year format. A summary of global is shown of the global data. 
+
+```{r Cleaning Data - combining the global data}
+
+global <- global_cases %>%
+  full_join(global_deaths) %>%
+  rename(Country_Region = `Country/Region`,
+         Province_State = `Province/State`) %>%
+  mutate(date = mdy(date))
+global <- global %>% filter(cases > 0)
+summary(global)
+```
+### The US Data
+
+Second, the US cases and deaths were cleaned. The data sets were reshaped so each line represents a specific date. This transformation was done to help with the time-series analysis in the report. Certain columns, such as latitude and longitude,  were removed that will not be used in this analysis. The date column is converted to month-day-year format. The combined_key contains the country and state names.
+
+```{r Cleaning Data - US Cases}
+us_cases %>%
+  pivot_longer(cols = -(UID:Combined_Key),
+               names_to = "date",
+               values_to = "cases")
+
+us_cases <- us_cases %>%
+  pivot_longer(cols = -(UID:Combined_Key),
+               names_to = "date",
+               values_to = "cases") %>%
+  select(Admin2:cases) %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat,Long_))
+us_cases
+```
+
+```{r Cleaning Data - US Deaths}
+
+us_deaths <- us_deaths %>%
+  pivot_longer(cols = -(UID:Population),
+               names_to = "date",
+               values_to = "deaths") %>%
+  select(Admin2:deaths) %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat,Long_))
+```
+
+In the following code chunk, the two US data sets from above were combined into one. This is done using a full join. The population and cases are filtered to be greater than zero because this analysis looks at the the relationship between cases and population. A summary is shown of the us data set. 
+```{r Cleaning Data - combining the US data}
+us <- us_cases %>%
+  full_join(us_deaths)
+us <- us %>% filter(Population > 0)
+us <- us %>% filter(cases > 0)
+
+summary(us)
+```
+
+The UID data, which represents population data, is added to the global data set by using Combined_Key. This merges province/state and country names. This is to have a similar geographic format across data sets. After the join, the unnecessary columns, such as identiers, are removed because they are not used in the scope of this analysis. 
+```{r Population Data}
+global <- global %>%
+  unite("Combined_Key",
+        c(Province_State, Country_Region),
+        sep = ", ",
+        na.rm = TRUE,
+        remove = FALSE)
+
+global
+```
+
+```{r Add population data for global}
+global <- global %>%
+  left_join(uid, by = c("Province_State", "Country_Region")) %>%
+  select(-c(UID, FIPS)) %>%
+  select(Province_State, Country_Region, date, cases, deaths, Population, Combined_Key)
+global
+```
+
+
+## Visualizing the Data: 
+
+### Preparing the Data for Visualizations
+
+The following two code blocks were created to help develop the visuals presented later in this report. This section calculates the top 10 and bottom 10 US states and territories for COVID-19 cases. It also calculates the top 10 countries for COVID-19 cases. 
+
+The first code calculates the total number of COVID-19 cases for each US state and territory. The data is grouped by each state and the total cases is stored for each state. These are sorted in descending order. From there, the top 10 and bottom states and territories and identified and assigned to a variable for future use. 
+
+Similarly, the second code block follows the same process but four countries in the global data set. These are grouped by country and the COVID-19 total is calculated by taking the max(cases) because the data set is cumulative. This is then stored in descending order to easily know the top 10 countries for COVID-19 cases. 
+
+```{r Cases by state over time}
+state_totals <- us %>%
+  group_by(Province_State) %>%
+  summarize(total_cases = max(cases)) %>%
+  arrange(desc(total_cases))
+
+top10 <- head(state_totals, 10)
+
+bottom10 <- tail(state_totals, 10)
+
+top10_states <- top10$Province_State
+bottom10_states <- bottom10$Province_State
+
+```
+
+```{r Cases by country over time}
+global_totals <- global %>%
+  group_by(Country_Region) %>%
+  summarize(total_cases = max(cases)) %>%
+  arrange(desc(total_cases))
+
+top_10 <- head(global_totals, 10)
+
+top10_countries <- top_10$Country_Region
+
+```
+
+
+### Visualizations for the COVID-19 Data: 
+
+Three visuals are shown in this section. The first visual shows the top 10 countries with the most COVID-19 cases over time. The second visual shows the top 10 states with the most COVID-19 cases over time. The third visual shows the bottom 10 states and territories with the the most COVID-19 cases over time.
+
+In the first visual, the top 10 countries with the highest COVID-19 cases is shown. This visual was made with the top_10_countries created and described in the previous section. Then for each of those countries, the COVID-19 cases were grouped by date and plotted over time. 
+
+```{r Case Deaths over Time World}
+global %>%
+  filter(Country_Region %in% top10_countries) %>%
+  group_by(Country_Region, date) %>%
+  summarize(total_cases = sum(cases)) %>%
+  ggplot(aes(date, total_cases, 
+             color = Country_Region)) + 
+  geom_line(size = 2) + 
+  scale_color_brewer(palette = "BrBG") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "COVID-19 Cases Over Time: Top 10 Countries",
+    x = "Date",
+    y = "Country",
+    color = "Country"
+  ) 
+
+
+```
+All of the countries start with a similar amount of cases in the beginning to middle of 2020. This makes sense because COVID-19 cases did not become very common until the March - April time frame of 2020. Additionally, the US has the most COVID-19 cases over time. This will be explored more in the next visuals.
+
+
+
+
+
+In the second visual, the top 10 states with the highest COVID-19 cases is shown. This visual was made with the top10_states created and described in the previous section. Then for each of those states, the COVID-19 cases were grouped by date and plotted over time, resulting in a line chart. This compares how COVID-19 impacted US states.
+
+```{r Case Deaths over Time Top 10 US}
+us %>%
+  filter(Province_State %in% top10_states) %>%
+  group_by(Province_State, date) %>%
+  summarize(total_cases = sum(cases)) %>%
+  ggplot(aes(date, total_cases, 
+             color = Province_State)) + 
+  geom_line(size = 2) + 
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "COVID-19 Cases Over Time: Top 10 States",
+    x = "Date",
+    y = "State",
+    color = "State"
+  ) 
+```
+The visual shows the top 10 states for COVID-19 cases. Similar to the previous graph, all of the cases start off with a low number of COVID-19 cases and then grow at different rates over time. California has the most cases, followed by Texas, and then Florida. These states have very high populations which aligns with the regression model later in this report. 
+
+
+
+
+In the third visual, the bottom 10 states and territories with the lowest COVID-19 cases in the US is shown. This visual was made with the bottom10_states created and described in the previous section. Then for each of those states, the COVID-19 cases were grouped by date and plotted over time, resulting in a visual highlighting how COVID-19 cases developed in the US's least affected areas. 
+
+ 
+
+```{r Case Deaths over Time Bottom 10}
+us %>%
+  filter(Province_State %in% bottom10_states) %>%
+  group_by(Province_State, date) %>%
+  summarize(total_cases = sum(cases)) %>%
+  ggplot(aes(date, total_cases, 
+             color = Province_State)) + 
+  geom_line(size = 2) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "COVID-19 Cases Over Time: Bottom 10 States and Territories",
+    x = "Date",
+    y = "State",
+    color = "State"
+  ) 
+
+```
+The visual shows the bottom 10 states and territories for COVID-19 cases in the US. Similar to the previous two visuals, all of the cases start off with a low number of COVID-19 cases. These do all grow at different rates, but it is important to notice the y-axis scale on this graph compared to the previous graph as it is much smaller. The state with the most COVID-19 cases in this graph is West Virginia, with just over 600,000 cases. Many states and territories in this visual have smaller populations which helps explain why they have a lower case total for COVID-19.
+
+
+
+## Modeling the Date
+
+This model was developing to show the linear relationship between a state's population and their number of COVID-19 cases. First, the state's population is calculated in state_pop. Next, the state's total COVID-19 cases are calculated in state_data. These two data sets combined to have each state's population matched up with its total COVID-19 cases. 
+
+
+The results of this model show there is a statistically significant relationship between state population and their number of COVID-19 cases (p < 2e-16). The coefficient indicates that for every additional one million residents, the country will have an an additional 350,000 COVID-19 cases. Looking back at the top 10 states for COVID-19 visual, California has the most amount of COVID-19 cases. This makes sense with our model because California has the highest population and the most amount of cases. Overall, this model helps demonstrate that state population and COVID-19 cases are highly correlated, with population being a strong predictors in total number of cases per state. 
+```{r State Model}
+state_pop <- us %>%
+  group_by(Province_State) %>%
+  summarize(population = max(Population))
+
+state_data <- us %>%
+  group_by(Province_State) %>%
+  summarize(total_cases = max(cases)) %>% 
+  left_join(state_pop, by = "Province_State") %>%
+  filter(!is.na(population), !is.na(total_cases), population > 0)
+
+  
+state_model <- lm(total_cases ~ population, data = state_data)
+summary(state_model)
+
+```
+
+Below shows a visual representation of the values and description above. 
+
+```{r Global Model Visual}
+ggplot(state_data, aes(population, total_cases)) + 
+  geom_point(alpha = 0.6) + 
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "State Population Compared to COVID-19 Cases",
+    x = "Population",
+    y = "Total Cases"
+  )
+
+```
+Each dot represents a state, showing its population and total cases. The blue regression line shows that as population increases, the number of cases also increases. Most of the dots (states) in this visual fall close to the regression line, which reinforces the relationship identified in the model.
+
+
+# Conclusion and Biases
+This report analyzed the global and US COVID-19 data from the Johns Hopkins data set. As a part of the data cleaning process, the cases, deaths, and population data were combined. This was done to help explore how COVID-19 impacted different areas. Visualizations and models were also included in this report to help highlight the correlation between population and COVID-19 cases. 
+
+There are many possibilities for bias in this analysis. To begin, the data used could be incorrect based on a number of reasons. For example, different countries had different reporting procedures, which could lead to incorrect case and death values. Additionally, the dates for each case might have been recorded when the person tested positive, or when they started showing symptoms. For personal biases, I lived through the COVID-19 pandemic. This makes me educated enough on COVID-19 to have opinions on it, but not enough for me to understand the death and case toll everyday. While creating this analysis, I was aware of my biases and tried to not be swayed by my own beliefs and was aware that the data provided might have limitations. Overall, even with these possible biases and limitations, the COVID-19 analysis helped create a picture of how countries, US states, and Us territories were impacted by COVID-19, while also offering possible reasons why certain areas were more impacted than others. 
