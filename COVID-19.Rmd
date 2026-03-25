@@ -271,7 +271,7 @@ The visual shows the bottom 10 states and territories for COVID-19 cases in the 
 
 
 
-## Modeling the Date
+## Modeling the Data
 
 This model was developing to show the linear relationship between a state's population and their number of COVID-19 cases. First, the state's population is calculated in state_pop. Next, the state's total COVID-19 cases are calculated in state_data. These two data sets combined to have each state's population matched up with its total COVID-19 cases. 
 
